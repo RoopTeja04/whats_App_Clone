@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL
+    baseURL: https://whats-app-clone-y159.onrender.com
 });
 
 export const getConversations = () => API.get("/messages/conversations");

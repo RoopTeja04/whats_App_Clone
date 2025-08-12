@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import { getConversations, getMessagesByWaId, sendMessage } from "../services/api";
+import socket from "../socket"; 
 
 const Home = () => {
     const [chats, setChats] = useState([]);
@@ -9,7 +10,6 @@ const Home = () => {
     const [selectedChat, setSelectedChat] = useState(null);
     const [isMobileView, setIsMobileView] = useState(false);
 
-    // Detect screen size
     useEffect(() => {
         const handleResize = () => {
             setIsMobileView(window.innerWidth < 768);
@@ -19,23 +19,22 @@ const Home = () => {
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
-    // Fetch conversations
     useEffect(() => {
         getConversations().then((res) => {
             if (res.data.success) setChats(res.data.conversations);
         });
     }, []);
 
-    // Fetch messages when chat selected
     useEffect(() => {
         if (selectedChat) {
+
+            socket.emit("joinRoom", selectedChat);
+
             getMessagesByWaId(selectedChat).then((res) => {
                 if (res.data.success) {
                     const formatted = res.data.messages.map((msg) => ({
-                        message: msg.message,
-                        timestamp: msg.timestamp,
-                        isSent: msg.wa_id !== selectedChat,
-                        status: msg.status
+                        ...msg,
+                        isSent: msg.wa_id !== selectedChat
                     }));
                     setMessages(formatted);
                 }
@@ -43,7 +42,28 @@ const Home = () => {
         }
     }, [selectedChat]);
 
-    // Send message
+    useEffect(() => {
+        socket.on("newMessage", (msg) => {
+            setMessages((prev) => [...prev, {
+                ...msg,
+                isSent: msg.wa_id !== selectedChat
+            }]);
+        });
+
+        socket.on("statusUpdate", (update) => {
+            setMessages((prev) =>
+                prev.map((m) =>
+                    m._id === update.id ? { ...m, status: update.status } : m
+                )
+            );
+        });
+
+        return () => {
+            socket.off("newMessage");
+            socket.off("statusUpdate");
+        };
+    }, [selectedChat]);
+
     const handleSendMessage = (text) => {
         if (!selectedChat) return;
         sendMessage({
@@ -54,7 +74,7 @@ const Home = () => {
             if (res.data.success) {
                 setMessages((prev) => [
                     ...prev,
-                    { message: text, timestamp: new Date(), isSent: true, status: "sent" }
+                    { ...res.data.data, isSent: true }
                 ]);
                 getConversations().then((res) => {
                     if (res.data.success) setChats(res.data.conversations);
@@ -65,7 +85,6 @@ const Home = () => {
 
     return (
         <div className="flex h-screen">
-            {/* Sidebar */}
             {(!isMobileView || (isMobileView && !selectedChat)) && (
                 <Sidebar
                     chats={chats}
@@ -74,8 +93,6 @@ const Home = () => {
                     isMobileView={isMobileView}
                 />
             )}
-
-            {/* Chat Window */}
             {(!isMobileView || (isMobileView && selectedChat)) && (
                 <ChatWindow
                     messages={messages}
